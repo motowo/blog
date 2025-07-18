@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+coverage/
+.nyc_output/
+
+# Production builds
+dist/
+build/
+
+# Laravel
+/backend/bootstrap/cache/*
+/backend/storage/*.key
+/backend/storage/app/*
+/backend/storage/framework/cache/*
+/backend/storage/framework/sessions/*
+/backend/storage/framework/testing/*
+/backend/storage/framework/views/*
+/backend/storage/logs/*
+!.gitkeep
+
+# Database
+/database/data/
+
+# Docker volumes
+db_data/
+
+# Cache files
+.eslintcache
+.cache/
+
+# Temporary files
+*.tmp
+*.temp

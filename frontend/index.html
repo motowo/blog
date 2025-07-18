@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog App - 開発環境</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen">
+        <header class="bg-white shadow">
+            <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+                <h1 class="text-3xl font-bold text-gray-900">Blog App</h1>
+                <p class="text-sm text-gray-600 mt-2">有料コンテンツブログアプリケーション</p>
+            </div>
+        </header>
+        
+        <main>
+            <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <div class="px-4 py-6 sm:px-0">
+                    <div class="border-4 border-dashed border-gray-200 rounded-lg p-8">
+                        <div class="text-center">
+                            <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                                🎉 開発環境セットアップ完了！（ホットリロード対応）
+                            </h2>
+                            <p class="text-gray-600 mb-6">
+                                有料コンテンツブログアプリケーションのMVP開発環境が正常に動作しています。
+                            </p>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+                                <div class="bg-white p-6 rounded-lg shadow">
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-2">技術スタック</h3>
+                                    <ul class="text-sm text-gray-600 space-y-1">
+                                        <li>• React.js 18.x + TypeScript</li>
+                                        <li>• PHP 8.3 + Laravel 11.x</li>
+                                        <li>• MySQL 8.0</li>
+                                        <li>• Docker + Docker Compose</li>
+                                        <li>• Tailwind CSS</li>
+                                    </ul>
+                                </div>
+                                
+                                <div class="bg-white p-6 rounded-lg shadow">
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-2">MVP機能</h3>
+                                    <ul class="text-sm text-gray-600 space-y-1">
+                                        <li>• ユーザー認証</li>
+                                        <li>• 記事投稿・編集</li>
+                                        <li>• 有料記事の購入</li>
+                                        <li>• 記事検索</li>
+                                        <li>• 管理者機能</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-8 flex justify-center space-x-4">
+                                <a href="http://localhost" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                                    フロントエンド (Port 80)
+                                </a>
+                                <a href="http://localhost:8000" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
+                                    バックエンド API (Port 8000)
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

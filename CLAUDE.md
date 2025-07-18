@@ -1,5 +1,3 @@
-# 将棋アプリ開発ルール
-
 ## 開発フロー
 
 ### 基本ルール
@@ -56,10 +54,6 @@
 - npm run test: Jest でテスト実行
 
 ## Docker環境
-
-### 構成
-- `frontend`: Vue.js + TypeScript アプリケーション（開発時: Node.js、本番時: Nginx）
-- 将来的に`backend`、`database`サービスを追加可能
 
 ### 主要コマンド
 - `docker-compose up -d`: 環境起動
