@@ -50,7 +50,7 @@ docker-compose exec backend php artisan migrate
 ```
 
 5. アプリケーションへのアクセス
-- フロントエンド: http://localhost:3000
+- フロントエンド: http://localhost
 - バックエンド API: http://localhost:8000
 - データベース: localhost:3306
 

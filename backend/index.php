@@ -70,6 +70,49 @@ switch ($path) {
             echo json_encode(['error' => 'Method not allowed']);
         }
         break;
+
+    case '/api/articles':
+        if ($method === 'GET') {
+            handleGetArticles($pdo);
+        } else if ($method === 'POST') {
+            handleCreateArticle($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case '/api/articles/published':
+        if ($method === 'GET') {
+            handleGetPublishedArticles($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case (preg_match('/^\/api\/articles\/(\d+)$/', $path, $matches) ? true : false):
+        $articleId = $matches[1];
+        if ($method === 'GET') {
+            handleGetArticle($pdo, $articleId);
+        } else if ($method === 'PUT') {
+            handleUpdateArticle($pdo, $articleId);
+        } else if ($method === 'DELETE') {
+            handleDeleteArticle($pdo, $articleId);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case '/api/categories':
+        if ($method === 'GET') {
+            handleGetCategories($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
         
     case '/api/test':
         echo json_encode([
@@ -90,6 +133,13 @@ switch ($path) {
                 'POST /api/login', 
                 'POST /api/logout',
                 'GET /api/user',
+                'GET /api/articles',
+                'POST /api/articles', 
+                'GET /api/articles/published',
+                'GET /api/articles/{id}',
+                'PUT /api/articles/{id}',
+                'DELETE /api/articles/{id}',
+                'GET /api/categories',
                 'GET /api/test'
             ]
         ]);
@@ -240,6 +290,293 @@ function getBearerToken() {
     return null;
 }
 
+// 記事取得処理（一覧）
+function handleGetArticles($pdo) {
+    $token = getBearerToken();
+    if (!$token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+        return;
+    }
+
+    // 管理者は全記事、一般ユーザーは自分の記事のみ取得
+    if ($user['role'] === 'admin') {
+        $stmt = $pdo->prepare("
+            SELECT a.*, u.username as author_username, c.name as category_name
+            FROM articles a
+            LEFT JOIN users u ON a.user_id = u.id
+            LEFT JOIN categories c ON a.category_id = c.id
+            ORDER BY a.created_at DESC
+        ");
+        $stmt->execute();
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT a.*, u.username as author_username, c.name as category_name
+            FROM articles a
+            LEFT JOIN users u ON a.user_id = u.id
+            LEFT JOIN categories c ON a.category_id = c.id
+            WHERE a.user_id = ?
+            ORDER BY a.created_at DESC
+        ");
+        $stmt->execute([$user['id']]);
+    }
+
+    $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(['articles' => $articles]);
+}
+
+// 記事取得処理（詳細）
+function handleGetArticle($pdo, $articleId) {
+    $stmt = $pdo->prepare("
+        SELECT a.*, u.username as author_username, c.name as category_name
+        FROM articles a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.id = ?
+    ");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$article) {
+        http_response_code(404);
+        echo json_encode(['message' => '記事が見つかりません。']);
+        return;
+    }
+
+    echo json_encode(['article' => $article]);
+}
+
+// 記事作成処理
+function handleCreateArticle($pdo) {
+    $token = getBearerToken();
+    if (!$token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+        return;
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // バリデーション
+    $errors = [];
+    if (empty($input['title'])) $errors['title'] = ['タイトルは必須です'];
+    if (empty($input['content'])) $errors['content'] = ['内容は必須です'];
+    if (empty($input['category_id'])) $errors['category_id'] = ['カテゴリは必須です'];
+
+    if (!empty($errors)) {
+        http_response_code(422);
+        echo json_encode(['message' => '入力内容に誤りがあります。', 'errors' => $errors]);
+        return;
+    }
+
+    // 記事作成
+    $stmt = $pdo->prepare("
+        INSERT INTO articles (user_id, title, content, category_id, status, is_premium, price, created_at, updated_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ");
+    $stmt->execute([
+        $user['id'],
+        $input['title'],
+        $input['content'],
+        $input['category_id'],
+        $input['status'] ?? 'draft',
+        $input['is_premium'] ?? 0,
+        $input['price'] ?? 0
+    ]);
+
+    $articleId = $pdo->lastInsertId();
+
+    // 作成した記事を取得
+    $stmt = $pdo->prepare("
+        SELECT a.*, u.username as author_username, c.name as category_name
+        FROM articles a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.id = ?
+    ");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    http_response_code(201);
+    echo json_encode([
+        'message' => '記事が作成されました。',
+        'article' => $article
+    ]);
+}
+
+// 記事更新処理
+function handleUpdateArticle($pdo, $articleId) {
+    $token = getBearerToken();
+    if (!$token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+        return;
+    }
+
+    // 記事の存在確認と権限チェック
+    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = ?");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$article) {
+        http_response_code(404);
+        echo json_encode(['message' => '記事が見つかりません。']);
+        return;
+    }
+
+    // 管理者または記事の作成者のみ編集可能
+    if ($user['role'] !== 'admin' && $article['user_id'] != $user['id']) {
+        http_response_code(403);
+        echo json_encode(['message' => 'この記事を編集する権限がありません。']);
+        return;
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // バリデーション
+    $errors = [];
+    if (empty($input['title'])) $errors['title'] = ['タイトルは必須です'];
+    if (empty($input['content'])) $errors['content'] = ['内容は必須です'];
+    if (empty($input['category_id'])) $errors['category_id'] = ['カテゴリは必須です'];
+
+    if (!empty($errors)) {
+        http_response_code(422);
+        echo json_encode(['message' => '入力内容に誤りがあります。', 'errors' => $errors]);
+        return;
+    }
+
+    // 記事更新
+    $stmt = $pdo->prepare("
+        UPDATE articles 
+        SET title = ?, content = ?, category_id = ?, status = ?, is_premium = ?, price = ?, updated_at = NOW()
+        WHERE id = ?
+    ");
+    $stmt->execute([
+        $input['title'],
+        $input['content'],
+        $input['category_id'],
+        $input['status'] ?? $article['status'],
+        $input['is_premium'] ?? $article['is_premium'],
+        $input['price'] ?? $article['price'],
+        $articleId
+    ]);
+
+    // 更新した記事を取得
+    $stmt = $pdo->prepare("
+        SELECT a.*, u.username as author_username, c.name as category_name
+        FROM articles a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.id = ?
+    ");
+    $stmt->execute([$articleId]);
+    $updatedArticle = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    echo json_encode([
+        'message' => '記事が更新されました。',
+        'article' => $updatedArticle
+    ]);
+}
+
+// 記事削除処理
+function handleDeleteArticle($pdo, $articleId) {
+    $token = getBearerToken();
+    if (!$token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+        return;
+    }
+
+    // 記事の存在確認と権限チェック
+    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = ?");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$article) {
+        http_response_code(404);
+        echo json_encode(['message' => '記事が見つかりません。']);
+        return;
+    }
+
+    // 管理者または記事の作成者のみ削除可能
+    if ($user['role'] !== 'admin' && $article['user_id'] != $user['id']) {
+        http_response_code(403);
+        echo json_encode(['message' => 'この記事を削除する権限がありません。']);
+        return;
+    }
+
+    // 記事削除
+    $stmt = $pdo->prepare("DELETE FROM articles WHERE id = ?");
+    $stmt->execute([$articleId]);
+
+    echo json_encode(['message' => '記事が削除されました。']);
+}
+
+// 公開記事一覧取得（認証不要）
+function handleGetPublishedArticles($pdo) {
+    $stmt = $pdo->prepare("
+        SELECT a.*, u.username as author_username, c.name as category_name
+        FROM articles a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.status = 'published'
+        ORDER BY a.created_at DESC
+    ");
+    $stmt->execute();
+    $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['articles' => $articles]);
+}
+
+// カテゴリ一覧取得
+function handleGetCategories($pdo) {
+    $stmt = $pdo->prepare("SELECT * FROM categories ORDER BY name ASC");
+    $stmt->execute();
+    $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['categories' => $categories]);
+}
+
+// トークンからユーザー情報を取得
+function getUserFromToken($pdo, $token) {
+    $stmt = $pdo->prepare("
+        SELECT u.id, u.username, u.email, u.role, u.created_at 
+        FROM users u 
+        JOIN personal_access_tokens t ON u.id = t.tokenable_id 
+        WHERE t.token = ? AND t.tokenable_type = 'App\\\\Models\\\\User'
+    ");
+    $stmt->execute([hash('sha256', $token)]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}
+
 // データベーステーブル作成（初回実行時）
 function createTables($pdo) {
     $pdo->exec("
@@ -269,6 +606,44 @@ function createTables($pdo) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS categories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            description TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS articles (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            content LONGTEXT NOT NULL,
+            category_id INT NULL,
+            status ENUM('draft', 'published', 'archived') DEFAULT 'draft',
+            is_premium BOOLEAN DEFAULT FALSE,
+            price DECIMAL(10,2) DEFAULT 0.00,
+            view_count INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+        )
+    ");
+
+    // デフォルトカテゴリの作成
+    $pdo->exec("
+        INSERT IGNORE INTO categories (name, description) VALUES 
+        ('テクノロジー', 'プログラミング、AI、ソフトウェア開発などの技術記事'),
+        ('ビジネス', 'ビジネス戦略、マーケティング、起業などの記事'),
+        ('ライフスタイル', '健康、趣味、日常生活に関する記事'),
+        ('教育', '学習方法、スキルアップ、キャリア開発の記事'),
+        ('エンターテイメント', '映画、音楽、ゲーム、アートに関する記事')
     ");
 }
 
