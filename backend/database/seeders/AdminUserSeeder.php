@@ -32,9 +32,10 @@ class AdminUserSeeder extends Seeder
             // 既存の管理者チェック
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? OR role = 'admin' LIMIT 1");
             $stmt->execute(['admin@blog.local']);
-            
+
             if ($stmt->fetch()) {
                 echo "管理者ユーザーは既に存在します。\n";
+
                 return;
             }
 
@@ -45,21 +46,21 @@ class AdminUserSeeder extends Seeder
                 'password' => password_hash('admin123456', PASSWORD_DEFAULT),
                 'role' => 'admin',
                 'created_at' => date('Y-m-d H:i:s'),
-                'updated_at' => date('Y-m-d H:i:s')
+                'updated_at' => date('Y-m-d H:i:s'),
             ];
 
-            $stmt = $pdo->prepare("
+            $stmt = $pdo->prepare('
                 INSERT INTO users (username, email, password, role, created_at, updated_at) 
                 VALUES (?, ?, ?, ?, ?, ?)
-            ");
-            
+            ');
+
             $stmt->execute([
                 $adminData['username'],
                 $adminData['email'],
                 $adminData['password'],
                 $adminData['role'],
                 $adminData['created_at'],
-                $adminData['updated_at']
+                $adminData['updated_at'],
             ]);
 
             echo "管理者ユーザーを作成しました:\n";
@@ -69,7 +70,7 @@ class AdminUserSeeder extends Seeder
             echo "- ロール: 管理者\n";
 
         } catch (\PDOException $e) {
-            echo "エラー: " . $e->getMessage() . "\n";
+            echo 'エラー: '.$e->getMessage()."\n";
         }
     }
 }
