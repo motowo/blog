@@ -124,6 +124,36 @@ switch ($path) {
         }
         break;
 
+    case '/api/purchases':
+        if ($method === 'POST') {
+            handlePurchaseArticle($pdo);
+        } elseif ($method === 'GET') {
+            handleGetPurchases($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case '/api/purchases/status':
+        if ($method === 'POST') {
+            handleGetMultiplePurchaseStatus($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case preg_match('/^\/api\/articles\/(\d+)\/purchase-status$/', $path, $matches) ? true : false:
+        $articleId = $matches[1];
+        if ($method === 'GET') {
+            handleGetPurchaseStatus($pdo, $articleId);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
     case '/api/test':
         echo json_encode([
             'message' => 'API is working',
@@ -151,6 +181,10 @@ switch ($path) {
                 'DELETE /api/articles/{id}',
                 'GET /api/categories',
                 'GET /api/articles/search',
+                'POST /api/purchases',
+                'GET /api/purchases',
+                'POST /api/purchases/status',
+                'GET /api/articles/{id}/purchase-status',
                 'GET /api/test',
             ],
         ]);
@@ -750,6 +784,216 @@ function getUserFromToken($pdo, $token)
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
+// 記事購入処理
+function handlePurchaseArticle($pdo)
+{
+    $token = getBearerToken();
+    if (! $token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (! $user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+
+        return;
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    // バリデーション
+    if (empty($input['article_id'])) {
+        http_response_code(422);
+        echo json_encode(['message' => '記事IDは必須です。']);
+
+        return;
+    }
+
+    $articleId = $input['article_id'];
+
+    // 記事の存在確認
+    $stmt = $pdo->prepare('SELECT * FROM articles WHERE id = ? AND status = "published"');
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (! $article) {
+        http_response_code(404);
+        echo json_encode(['message' => '記事が見つかりません。']);
+
+        return;
+    }
+
+    // 有料記事でない場合はエラー
+    if (! $article['is_premium']) {
+        http_response_code(422);
+        echo json_encode(['message' => 'この記事は無料記事です。']);
+
+        return;
+    }
+
+    // 既に購入済みかチェック
+    $stmt = $pdo->prepare('SELECT id FROM purchases WHERE user_id = ? AND article_id = ?');
+    $stmt->execute([$user['id'], $articleId]);
+    if ($stmt->fetch()) {
+        http_response_code(422);
+        echo json_encode(['message' => 'この記事は既に購入済みです。']);
+
+        return;
+    }
+
+    // 購入処理
+    $stmt = $pdo->prepare('
+        INSERT INTO purchases (user_id, article_id, purchase_date, payment_method, amount, status, created_at, updated_at)
+        VALUES (?, ?, NOW(), "mock_payment", ?, "completed", NOW(), NOW())
+    ');
+    $stmt->execute([$user['id'], $articleId, $article['price']]);
+
+    $purchaseId = $pdo->lastInsertId();
+
+    // 購入情報を取得
+    $stmt = $pdo->prepare('
+        SELECT p.*, a.title as article_title, a.price as article_price, u.username as buyer_username
+        FROM purchases p
+        LEFT JOIN articles a ON p.article_id = a.id
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE p.id = ?
+    ');
+    $stmt->execute([$purchaseId]);
+    $purchase = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    http_response_code(201);
+    echo json_encode([
+        'message' => '記事を購入しました。',
+        'purchase' => $purchase,
+    ]);
+}
+
+// 購入履歴取得
+function handleGetPurchases($pdo)
+{
+    $token = getBearerToken();
+    if (! $token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (! $user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+
+        return;
+    }
+
+    $stmt = $pdo->prepare('
+        SELECT p.*, a.title as article_title, a.price as article_price, u.username as author_username
+        FROM purchases p
+        LEFT JOIN articles a ON p.article_id = a.id
+        LEFT JOIN users u ON a.user_id = u.id
+        WHERE p.user_id = ?
+        ORDER BY p.created_at DESC
+    ');
+    $stmt->execute([$user['id']]);
+    $purchases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode(['purchases' => $purchases]);
+}
+
+// 購入状態確認
+function handleGetPurchaseStatus($pdo, $articleId)
+{
+    $token = getBearerToken();
+    if (! $token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (! $user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+
+        return;
+    }
+
+    // 購入済みかチェック
+    $stmt = $pdo->prepare('SELECT * FROM purchases WHERE user_id = ? AND article_id = ?');
+    $stmt->execute([$user['id'], $articleId]);
+    $purchase = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    echo json_encode([
+        'purchased' => (bool) $purchase,
+        'purchase_info' => $purchase,
+    ]);
+}
+
+// 複数記事の購入状態確認
+function handleGetMultiplePurchaseStatus($pdo)
+{
+    $token = getBearerToken();
+    if (! $token) {
+        // 未ログインの場合は空の購入状態を返す
+        echo json_encode(['purchase_status' => []]);
+        return;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (! $user) {
+        echo json_encode(['purchase_status' => []]);
+        return;
+    }
+
+    $input = json_decode(file_get_contents('php://input'), true);
+    $articleIds = $input['article_ids'] ?? [];
+
+    if (empty($articleIds)) {
+        echo json_encode(['purchase_status' => []]);
+        return;
+    }
+
+    // 購入済み記事をまとめて取得
+    $placeholders = str_repeat('?,', count($articleIds) - 1) . '?';
+    $stmt = $pdo->prepare("
+        SELECT article_id, purchase_date, amount, status
+        FROM purchases 
+        WHERE user_id = ? AND article_id IN ($placeholders)
+    ");
+    
+    $params = array_merge([$user['id']], $articleIds);
+    $stmt->execute($params);
+    $purchases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // 記事IDをキーとした連想配列に変換
+    $purchaseStatus = [];
+    foreach ($purchases as $purchase) {
+        $purchaseStatus[$purchase['article_id']] = [
+            'purchased' => true,
+            'purchase_date' => $purchase['purchase_date'],
+            'amount' => $purchase['amount'],
+            'status' => $purchase['status']
+        ];
+    }
+
+    // 購入していない記事IDにはfalseを設定
+    foreach ($articleIds as $articleId) {
+        if (!isset($purchaseStatus[$articleId])) {
+            $purchaseStatus[$articleId] = [
+                'purchased' => false
+            ];
+        }
+    }
+
+    echo json_encode(['purchase_status' => $purchaseStatus]);
+}
+
 // データベーステーブル作成（初回実行時）
 function createTables($pdo)
 {
@@ -809,6 +1053,23 @@ function createTables($pdo)
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
         )
     ");
+
+    $pdo->exec('
+        CREATE TABLE IF NOT EXISTS purchases (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            article_id INT NOT NULL,
+            purchase_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            payment_method VARCHAR(50) DEFAULT "mock_payment",
+            amount DECIMAL(10,2) NOT NULL,
+            status ENUM("completed", "pending", "cancelled") DEFAULT "completed",
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+            UNIQUE KEY unique_user_article (user_id, article_id)
+        )
+    ');
 
     // デフォルトカテゴリの作成
     $pdo->exec("

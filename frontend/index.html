@@ -887,6 +887,7 @@
             const [articles, setArticles] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [refreshTrigger, setRefreshTrigger] = useState(0);
+            const [purchaseStatus, setPurchaseStatus] = useState({});
 
             useEffect(() => {
                 if (currentView === 'dashboard') {
@@ -899,11 +900,37 @@
                     setIsLoading(true);
                     const response = await axios.get('http://localhost:8000/api/articles/published');
                     setArticles(response.data.articles);
+                    
+                    // 購入状態を取得
+                    if (response.data.articles.length > 0) {
+                        await fetchPurchaseStatus(response.data.articles);
+                    }
                 } catch (error) {
                     console.error('記事の取得に失敗しました:', error);
                     setArticles([]);
                 } finally {
                     setIsLoading(false);
+                }
+            };
+
+            const fetchPurchaseStatus = async (articlesToCheck) => {
+                try {
+                    const token = localStorage.getItem('token');
+                    if (!token) return;
+
+                    const articleIds = articlesToCheck.map(article => article.id);
+                    const response = await axios.post('http://localhost:8000/api/purchases/status', {
+                        article_ids: articleIds
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    setPurchaseStatus(response.data.purchase_status);
+                } catch (error) {
+                    console.error('購入状態の取得に失敗しました:', error);
                 }
             };
 
@@ -926,6 +953,23 @@
                 setRefreshTrigger(prev => prev + 1); // 記事一覧を再読み込み
             };
 
+            // 3桁区切りの数値フォーマット
+            const formatPrice = (price) => {
+                return new Intl.NumberFormat('ja-JP').format(price);
+            };
+
+            // カテゴリアイコンマッピング
+            const getCategoryIcon = (categoryName) => {
+                const icons = {
+                    'テクノロジー': '💻',
+                    'ビジネス': '💼',
+                    'ライフスタイル': '🌱',
+                    '教育': '📚',
+                    'エンターテイメント': '🎬'
+                };
+                return icons[categoryName] || '📄';
+            };
+
             const handleCreateArticle = () => {
                 setCurrentView('create-article');
             };
@@ -936,6 +980,10 @@
 
             if (currentView === 'user-profile') {
                 return <UserProfile user={user} onBack={handleBackToDashboard} />;
+            }
+
+            if (currentView === 'purchase-history') {
+                return <PurchaseHistory user={user} onBack={handleBackToDashboard} />;
             }
 
             if (currentView === 'create-article') {
@@ -1000,12 +1048,20 @@
                             {/* 記事投稿ボタン */}
                             <div className="mb-6 flex justify-between items-center">
                                 <h2 className="text-2xl font-bold text-gray-900">最新記事</h2>
-                                <button
-                                    onClick={handleCreateArticle}
-                                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
-                                >
-                                    + 記事を投稿
-                                </button>
+                                <div className="flex space-x-3">
+                                    <button
+                                        onClick={() => setCurrentView('purchase-history')}
+                                        className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    >
+                                        購入履歴
+                                    </button>
+                                    <button
+                                        onClick={handleCreateArticle}
+                                        className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    >
+                                        + 記事を投稿
+                                    </button>
+                                </div>
                             </div>
 
                             {/* 記事一覧 */}
@@ -1046,12 +1102,32 @@
                                                                 </>
                                                             )}
                                                         </div>
-                                                        <p className="text-gray-700 mb-3">
-                                                            {article.content.length > 200 
-                                                                ? `${article.content.substring(0, 200)}...` 
-                                                                : article.content
-                                                            }
-                                                        </p>
+                                                        <div className="text-gray-700 mb-3 relative">
+                                                            {(() => {
+                                                                const canReadFull = !article.is_premium || (user && purchaseStatus[article.id]?.purchased);
+                                                                const content = article.content.length > 200 
+                                                                    ? `${article.content.substring(0, 200)}...` 
+                                                                    : article.content;
+                                                                
+                                                                return (
+                                                                    <div className={canReadFull ? '' : 'filter blur-sm select-none'}>
+                                                                        {content}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {article.is_premium && (!user || !purchaseStatus[article.id]?.purchased) && (
+                                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                                    <div className="bg-white bg-opacity-90 px-3 py-1 rounded-md shadow-sm">
+                                                                        <span className="text-sm text-gray-600 flex items-center">
+                                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                                            </svg>
+                                                                            {user ? '購入が必要' : 'ログインが必要'}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1202,6 +1278,354 @@
             );
         };
 
+        // PurchaseHistory Component
+        const PurchaseHistory = ({ user, onBack }) => {
+            const [purchases, setPurchases] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+
+            useEffect(() => {
+                fetchPurchases();
+            }, []);
+
+            const fetchPurchases = async () => {
+                try {
+                    const token = localStorage.getItem('token');
+                    const response = await axios.get('http://localhost:8000/api/purchases', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    setPurchases(response.data.purchases);
+                } catch (error) {
+                    console.error('購入履歴の取得に失敗しました:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const formatPrice = (price) => {
+                return new Intl.NumberFormat('ja-JP').format(price);
+            };
+
+            if (isLoading) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    <header className="bg-white shadow">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between items-center py-6">
+                                <div className="flex items-center">
+                                    <button
+                                        onClick={onBack}
+                                        className="text-gray-400 hover:text-gray-600 mr-4"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                                        </svg>
+                                    </button>
+                                    <h1 className="text-3xl font-bold text-gray-900">購入履歴</h1>
+                                </div>
+                                <div className="flex items-center space-x-4">
+                                    <span className="text-sm text-gray-700">
+                                        {user.username} さん
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                        <div className="px-4 py-6 sm:px-0">
+                            {purchases.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <div className="mb-4">
+                                        <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                                        </svg>
+                                        <p className="text-xl text-gray-600">まだ購入した記事はありません</p>
+                                        <p className="text-gray-500 mt-2">有料記事を購入すると、ここに表示されます</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-white rounded-lg shadow overflow-hidden">
+                                    <div className="px-6 py-4 border-b border-gray-200">
+                                        <h2 className="text-lg font-semibold text-gray-900">購入済み記事 ({purchases.length}件)</h2>
+                                    </div>
+                                    <div className="divide-y divide-gray-200">
+                                        {purchases.map((purchase) => (
+                                            <div key={purchase.id} className="p-6 hover:bg-gray-50 transition-colors">
+                                                <div className="flex justify-between items-start">
+                                                    <div className="flex-1">
+                                                        <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                                                            {purchase.article_title}
+                                                        </h3>
+                                                        <div className="flex items-center space-x-3 text-sm text-gray-500 mb-3">
+                                                            <span>by {purchase.author_username}</span>
+                                                            <span>•</span>
+                                                            <span>購入日: {new Date(purchase.purchase_date).toLocaleDateString('ja-JP')}</span>
+                                                            <span>•</span>
+                                                            <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                                                                ¥{formatPrice(parseInt(purchase.amount))}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center space-x-3 text-sm">
+                                                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                                                                購入済み
+                                                            </span>
+                                                            <span className="text-gray-500">
+                                                                決済方法: {purchase.payment_method === 'mock_payment' ? 'モック決済' : purchase.payment_method}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        // ArticleDetail Component
+        const ArticleDetail = ({ articleId, user, onBack }) => {
+            const [article, setArticle] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+            const [purchaseStatus, setPurchaseStatus] = useState(null);
+            const [isPurchasing, setIsPurchasing] = useState(false);
+            const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+
+            useEffect(() => {
+                fetchArticle();
+                if (user) {
+                    fetchPurchaseStatus();
+                }
+            }, [articleId, user]);
+
+            const fetchArticle = async () => {
+                try {
+                    const response = await axios.get(`http://localhost:8000/api/articles/${articleId}`);
+                    setArticle(response.data.article);
+                } catch (error) {
+                    console.error('記事の取得に失敗しました:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const fetchPurchaseStatus = async () => {
+                try {
+                    const token = localStorage.getItem('token');
+                    const response = await axios.get(`http://localhost:8000/api/articles/${articleId}/purchase-status`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    setPurchaseStatus(response.data);
+                } catch (error) {
+                    console.error('購入状態の取得に失敗しました:', error);
+                }
+            };
+
+            const handlePurchase = async () => {
+                setIsPurchasing(true);
+                try {
+                    const token = localStorage.getItem('token');
+                    const response = await axios.post('http://localhost:8000/api/purchases', {
+                        article_id: articleId
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    alert('記事を購入しました！');
+                    setShowPurchaseModal(false);
+                    fetchPurchaseStatus(); // 購入状態を更新
+                } catch (error) {
+                    console.error('購入に失敗しました:', error);
+                    alert(error.response?.data?.message || '購入に失敗しました');
+                } finally {
+                    setIsPurchasing(false);
+                }
+            };
+
+            const formatPrice = (price) => {
+                return new Intl.NumberFormat('ja-JP').format(price);
+            };
+
+            const getCategoryIcon = (categoryName) => {
+                const icons = {
+                    'テクノロジー': '💻',
+                    'ビジネス': '💼',
+                    'ライフスタイル': '🌱',
+                    '教育': '📚',
+                    'エンターテイメント': '🎬'
+                };
+                return icons[categoryName] || '📄';
+            };
+
+            if (isLoading) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                    </div>
+                );
+            }
+
+            if (!article) {
+                return (
+                    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+                        <div className="text-center">
+                            <p className="text-gray-600 text-lg">記事が見つかりません</p>
+                            <button
+                                onClick={onBack}
+                                className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                            >
+                                戻る
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            const canReadFullArticle = !article.is_premium || (purchaseStatus && purchaseStatus.purchased);
+
+            return (
+                <div className="min-h-screen bg-gray-100">
+                    <header className="bg-white shadow">
+                        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div className="flex justify-between items-center py-4">
+                                <button
+                                    onClick={onBack}
+                                    className="text-gray-400 hover:text-gray-600 flex items-center"
+                                >
+                                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                                    </svg>
+                                    戻る
+                                </button>
+                                <h1 className="text-lg font-semibold text-gray-900">記事詳細</h1>
+                                <div></div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+                        <article className="bg-white rounded-lg shadow-lg overflow-hidden">
+                            <div className="p-8">
+                                <div className="mb-6">
+                                    <div className="flex items-center space-x-3 text-sm text-gray-500 mb-4">
+                                        <span>by {article.author_username}</span>
+                                        <span>•</span>
+                                        <span>{new Date(article.created_at).toLocaleDateString('ja-JP')}</span>
+                                        <span>•</span>
+                                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                                            <span>{getCategoryIcon(article.category_name)}</span>
+                                            <span>{article.category_name}</span>
+                                        </span>
+                                        <span>•</span>
+                                        {article.is_premium ? (
+                                            <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                                                有料 ¥{formatPrice(parseInt(article.price))}
+                                            </span>
+                                        ) : (
+                                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                                                無料
+                                            </span>
+                                        )}
+                                    </div>
+                                    <h1 className="text-3xl font-bold text-gray-900 mb-4">{article.title}</h1>
+                                </div>
+
+                                <div className="prose max-w-none">
+                                    {canReadFullArticle ? (
+                                        <div className="text-gray-700 leading-relaxed">
+                                            {article.content.split('\n').map((paragraph, index) => (
+                                                <p key={index} className="mb-4">{paragraph}</p>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <div className="text-gray-700 leading-relaxed mb-6">
+                                                {article.content.length > 200 
+                                                    ? article.content.substring(0, 200) + '...'
+                                                    : article.content
+                                                }
+                                            </div>
+                                            <div className="bg-gradient-to-t from-white to-transparent h-20 -mt-6 mb-6"></div>
+                                            <div className="text-center border-2 border-dashed border-gray-300 rounded-lg p-8">
+                                                <div className="mb-4">
+                                                    <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                    </svg>
+                                                    <p className="text-lg font-semibold text-gray-900">この記事は有料記事です</p>
+                                                    <p className="text-gray-600 mt-2">続きを読むには購入が必要です</p>
+                                                </div>
+                                                {user ? (
+                                                    <button
+                                                        onClick={() => setShowPurchaseModal(true)}
+                                                        className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 font-semibold"
+                                                    >
+                                                        ¥{formatPrice(parseInt(article.price))} で購入する
+                                                    </button>
+                                                ) : (
+                                                    <p className="text-gray-600">購入するにはログインが必要です</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </article>
+                    </main>
+
+                    {/* 購入確認モーダル */}
+                    {showPurchaseModal && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                                <h3 className="text-lg font-semibold text-gray-900 mb-4">記事を購入しますか？</h3>
+                                <div className="mb-4">
+                                    <p className="text-gray-700 mb-2">記事: {article.title}</p>
+                                    <p className="text-xl font-bold text-purple-600">¥{formatPrice(parseInt(article.price))}</p>
+                                </div>
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mb-4">
+                                    <p className="text-sm text-yellow-800">
+                                        ⚠️ これはモック決済です。実際の料金は発生しません。
+                                    </p>
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <button
+                                        onClick={() => setShowPurchaseModal(false)}
+                                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                                        disabled={isPurchasing}
+                                    >
+                                        キャンセル
+                                    </button>
+                                    <button
+                                        onClick={handlePurchase}
+                                        disabled={isPurchasing}
+                                        className="bg-purple-600 text-white px-6 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50"
+                                    >
+                                        {isPurchasing ? '購入中...' : '購入する'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         // PublicHome Component (初期画面)
         const PublicHome = ({ isAuthenticated, user, onLogin, onLogout, onGoToDashboard }) => {
             const [articles, setArticles] = useState([]);
@@ -1215,10 +1639,23 @@
             const [freeOnly, setFreeOnly] = useState(false);
             const [pagination, setPagination] = useState({ current_page: 1, has_more: true });
             const [isLoadingMore, setIsLoadingMore] = useState(false);
+            const [currentView, setCurrentView] = useState('home');
+            const [selectedArticleId, setSelectedArticleId] = useState(null);
+            const [purchaseStatus, setPurchaseStatus] = useState({});
 
             useEffect(() => {
                 fetchPublishedArticles(1, true);
             }, []);
+
+            useEffect(() => {
+                // ユーザーがログインした時に購入状態を更新
+                if (user && articles.length > 0) {
+                    fetchPurchaseStatus(articles);
+                }
+                if (!user) {
+                    setPurchaseStatus({});
+                }
+            }, [user]);
 
             // カテゴリアイコンマッピング
             const getCategoryIcon = (categoryName) => {
@@ -1254,6 +1691,11 @@
                     }
                     
                     setPagination(response.data.pagination);
+                    
+                    // 購入状態を取得（ログイン済みの場合のみ）
+                    if (user) {
+                        await fetchPurchaseStatus(response.data.articles);
+                    }
                 } catch (error) {
                     console.error('記事の取得に失敗しました:', error);
                     if (reset) {
@@ -1262,6 +1704,30 @@
                 } finally {
                     setIsLoading(false);
                     setIsLoadingMore(false);
+                }
+            };
+
+            const fetchPurchaseStatus = async (articlesToCheck) => {
+                try {
+                    const token = localStorage.getItem('token');
+                    if (!token) return;
+
+                    const articleIds = articlesToCheck.map(article => article.id);
+                    const response = await axios.post('http://localhost:8000/api/purchases/status', {
+                        article_ids: articleIds
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    setPurchaseStatus(prev => ({
+                        ...prev,
+                        ...response.data.purchase_status
+                    }));
+                } catch (error) {
+                    console.error('購入状態の取得に失敗しました:', error);
                 }
             };
 
@@ -1292,12 +1758,17 @@
                 onLogout();
             };
 
-            const handleSearch = (results, query, categoryId, freeOnly) => {
+            const handleSearch = async (results, query, categoryId, freeOnly) => {
                 setSearchResults(results);
                 setSearchQuery(query);
                 setSelectedCategory(categoryId);
                 setFreeOnly(freeOnly);
                 setIsSearchMode(true);
+                
+                // 検索結果の購入状態も取得
+                if (user && results.length > 0) {
+                    await fetchPurchaseStatus(results);
+                }
             };
 
             const handleClearSearch = () => {
@@ -1307,6 +1778,26 @@
                 setFreeOnly(false);
                 setIsSearchMode(false);
             };
+
+            const handleArticleClick = (articleId) => {
+                setSelectedArticleId(articleId);
+                setCurrentView('article-detail');
+            };
+
+            const handleBackToHome = () => {
+                setCurrentView('home');
+                setSelectedArticleId(null);
+            };
+
+            if (currentView === 'article-detail' && selectedArticleId) {
+                return (
+                    <ArticleDetail 
+                        articleId={selectedArticleId} 
+                        user={user} 
+                        onBack={handleBackToHome}
+                    />
+                );
+            }
 
             if (showAuth) {
                 return (
@@ -1419,7 +1910,12 @@
                                                 <div className="flex justify-between items-start">
                                                     <div className="flex-1">
                                                         <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                                                            {article.title}
+                                                            <button
+                                                                onClick={() => handleArticleClick(article.id)}
+                                                                className="text-left hover:text-blue-600 transition-colors cursor-pointer"
+                                                            >
+                                                                {article.title}
+                                                            </button>
                                                         </h3>
                                                         <div className="flex items-center space-x-3 text-sm text-gray-500 mb-3">
                                                             <span>by {article.author_username}</span>
@@ -1432,21 +1928,47 @@
                                                             </span>
                                                             <span>•</span>
                                                             {article.is_premium ? (
-                                                                <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
-                                                                    有料 ¥{formatPrice(parseInt(article.price))}
-                                                                </span>
+                                                                purchaseStatus[article.id]?.purchased ? (
+                                                                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                                                                        購入済み
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                                                                        有料 ¥{formatPrice(parseInt(article.price))}
+                                                                    </span>
+                                                                )
                                                             ) : (
                                                                 <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
                                                                     無料
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-gray-700 mb-3">
-                                                            {article.content.length > 200 
-                                                                ? `${article.content.substring(0, 200)}...` 
-                                                                : article.content
-                                                            }
-                                                        </p>
+                                                        <div className="text-gray-700 mb-3 relative">
+                                                            {(() => {
+                                                                const canReadFull = !article.is_premium || (user && purchaseStatus[article.id]?.purchased);
+                                                                const content = article.content.length > 200 
+                                                                    ? `${article.content.substring(0, 200)}...` 
+                                                                    : article.content;
+                                                                
+                                                                return (
+                                                                    <div className={canReadFull ? '' : 'filter blur-sm select-none'}>
+                                                                        {content}
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                            {article.is_premium && (!user || !purchaseStatus[article.id]?.purchased) && (
+                                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                                    <div className="bg-white bg-opacity-90 px-3 py-1 rounded-md shadow-sm">
+                                                                        <span className="text-sm text-gray-600 flex items-center">
+                                                                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                                            </svg>
+                                                                            {user ? '購入が必要' : 'ログインが必要'}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
