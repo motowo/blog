@@ -1,10 +1,10 @@
 <?php
+
 /**
  * 管理者ユーザー作成スクリプト
- * 
+ *
  * 使用方法: php create_admin.php
  */
-
 echo "管理者ユーザー作成スクリプトを実行します...\n\n";
 
 // データベース接続設定
@@ -16,7 +16,7 @@ $password = 'blog_password';
 try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
+
     echo "✅ データベースに接続しました\n";
 
     // 既存の管理者チェック
@@ -24,7 +24,7 @@ try {
     $stmt->execute();
     $existingAdmins = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (!empty($existingAdmins)) {
+    if (! empty($existingAdmins)) {
         echo "⚠️  既存の管理者ユーザーが見つかりました:\n";
         foreach ($existingAdmins as $admin) {
             echo "   - ID: {$admin['id']}, ユーザー名: {$admin['username']}, メール: {$admin['email']}\n";
@@ -43,39 +43,40 @@ try {
             'username' => 'admin',
             'email' => 'admin@blog.local',
             'password' => 'admin123456',
-            'role' => 'admin'
+            'role' => 'admin',
         ],
         [
-            'username' => 'manager', 
+            'username' => 'manager',
             'email' => 'manager@blog.local',
             'password' => 'manager123456',
-            'role' => 'admin'
-        ]
+            'role' => 'admin',
+        ],
     ];
 
     foreach ($adminUsers as $adminData) {
         // 重複チェック
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? OR username = ?");
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? OR username = ?');
         $stmt->execute([$adminData['email'], $adminData['username']]);
-        
+
         if ($stmt->fetch()) {
             echo "⚠️  {$adminData['username']} は既に存在するためスキップします\n";
+
             continue;
         }
 
         // ユーザー作成
         $hashedPassword = password_hash($adminData['password'], PASSWORD_DEFAULT);
-        
-        $stmt = $pdo->prepare("
+
+        $stmt = $pdo->prepare('
             INSERT INTO users (username, email, password, role, created_at, updated_at) 
             VALUES (?, ?, ?, ?, NOW(), NOW())
-        ");
-        
+        ');
+
         $stmt->execute([
             $adminData['username'],
             $adminData['email'],
             $hashedPassword,
-            $adminData['role']
+            $adminData['role'],
         ]);
 
         echo "✅ 管理者ユーザーを作成しました:\n";
@@ -92,10 +93,9 @@ try {
     echo "3. 管理者ダッシュボードが表示されます\n";
 
 } catch (PDOException $e) {
-    echo "❌ データベースエラー: " . $e->getMessage() . "\n";
+    echo '❌ データベースエラー: '.$e->getMessage()."\n";
     exit(1);
 } catch (Exception $e) {
-    echo "❌ エラー: " . $e->getMessage() . "\n";
+    echo '❌ エラー: '.$e->getMessage()."\n";
     exit(1);
 }
-?>

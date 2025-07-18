@@ -1,13 +1,14 @@
 <?php
+
 // CORS設定
-header("Access-Control-Allow-Origin: http://localhost");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
-header("Access-Control-Allow-Credentials: true");
+header('Access-Control-Allow-Origin: http://localhost');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Credentials: true');
 
 // プリフライトリクエストへの対応
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    header("HTTP/1.1 200 OK");
+    header('HTTP/1.1 200 OK');
     exit();
 }
 
@@ -43,7 +44,7 @@ switch ($path) {
             echo json_encode(['error' => 'Method not allowed']);
         }
         break;
-        
+
     case '/api/login':
         if ($method === 'POST') {
             handleLogin($pdo);
@@ -52,7 +53,7 @@ switch ($path) {
             echo json_encode(['error' => 'Method not allowed']);
         }
         break;
-        
+
     case '/api/logout':
         if ($method === 'POST') {
             handleLogout($pdo);
@@ -61,7 +62,7 @@ switch ($path) {
             echo json_encode(['error' => 'Method not allowed']);
         }
         break;
-        
+
     case '/api/user':
         if ($method === 'GET') {
             handleGetUser($pdo);
@@ -74,7 +75,7 @@ switch ($path) {
     case '/api/articles':
         if ($method === 'GET') {
             handleGetArticles($pdo);
-        } else if ($method === 'POST') {
+        } elseif ($method === 'POST') {
             handleCreateArticle($pdo);
         } else {
             http_response_code(405);
@@ -91,13 +92,13 @@ switch ($path) {
         }
         break;
 
-    case (preg_match('/^\/api\/articles\/(\d+)$/', $path, $matches) ? true : false):
+    case preg_match('/^\/api\/articles\/(\d+)$/', $path, $matches) ? true : false:
         $articleId = $matches[1];
         if ($method === 'GET') {
             handleGetArticle($pdo, $articleId);
-        } else if ($method === 'PUT') {
+        } elseif ($method === 'PUT') {
             handleUpdateArticle($pdo, $articleId);
-        } else if ($method === 'DELETE') {
+        } elseif ($method === 'DELETE') {
             handleDeleteArticle($pdo, $articleId);
         } else {
             http_response_code(405);
@@ -113,16 +114,25 @@ switch ($path) {
             echo json_encode(['error' => 'Method not allowed']);
         }
         break;
-        
+
+    case '/api/articles/search':
+        if ($method === 'GET') {
+            handleSearchArticles($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
     case '/api/test':
         echo json_encode([
             'message' => 'API is working',
             'timestamp' => date('Y-m-d H:i:s'),
             'method' => $method,
-            'path' => $path
+            'path' => $path,
         ]);
         break;
-        
+
     default:
         echo json_encode([
             'message' => 'Blog API Server',
@@ -130,136 +140,156 @@ switch ($path) {
             'timestamp' => date('Y-m-d H:i:s'),
             'available_endpoints' => [
                 'POST /api/register',
-                'POST /api/login', 
+                'POST /api/login',
                 'POST /api/logout',
                 'GET /api/user',
                 'GET /api/articles',
-                'POST /api/articles', 
+                'POST /api/articles',
                 'GET /api/articles/published',
                 'GET /api/articles/{id}',
                 'PUT /api/articles/{id}',
                 'DELETE /api/articles/{id}',
                 'GET /api/categories',
-                'GET /api/test'
-            ]
+                'GET /api/articles/search',
+                'GET /api/test',
+            ],
         ]);
         break;
 }
 
 // ユーザー登録処理
-function handleRegister($pdo) {
+function handleRegister($pdo)
+{
     $input = json_decode(file_get_contents('php://input'), true);
-    
+
     // バリデーション
     $errors = [];
-    if (empty($input['username'])) $errors['username'] = ['ユーザー名は必須です'];
-    if (empty($input['email'])) $errors['email'] = ['メールアドレスは必須です'];
-    if (empty($input['password'])) $errors['password'] = ['パスワードは必須です'];
-    if (strlen($input['password'] ?? '') < 8) $errors['password'] = ['パスワードは8文字以上である必要があります'];
-    if ($input['password'] !== $input['password_confirmation']) $errors['password_confirmation'] = ['パスワード確認が一致しません'];
-    
+    if (empty($input['username'])) {
+        $errors['username'] = ['ユーザー名は必須です'];
+    }
+    if (empty($input['email'])) {
+        $errors['email'] = ['メールアドレスは必須です'];
+    }
+    if (empty($input['password'])) {
+        $errors['password'] = ['パスワードは必須です'];
+    }
+    if (strlen($input['password'] ?? '') < 8) {
+        $errors['password'] = ['パスワードは8文字以上である必要があります'];
+    }
+    if ($input['password'] !== $input['password_confirmation']) {
+        $errors['password_confirmation'] = ['パスワード確認が一致しません'];
+    }
+
     // メール・ユーザー名の重複チェック
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? OR username = ?");
+    $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? OR username = ?');
     $stmt->execute([$input['email'], $input['username']]);
     if ($stmt->fetch()) {
         $errors['email'] = ['このメールアドレスまたはユーザー名は既に使用されています'];
     }
-    
-    if (!empty($errors)) {
+
+    if (! empty($errors)) {
         http_response_code(422);
         echo json_encode(['message' => '入力内容に誤りがあります。', 'errors' => $errors]);
+
         return;
     }
-    
+
     // ユーザー作成
     $hashedPassword = password_hash($input['password'], PASSWORD_DEFAULT);
     $role = $input['role'] ?? 'user';
-    
-    $stmt = $pdo->prepare("INSERT INTO users (username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())");
+
+    $stmt = $pdo->prepare('INSERT INTO users (username, email, password, role, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())');
     $stmt->execute([$input['username'], $input['email'], $hashedPassword, $role]);
-    
+
     $userId = $pdo->lastInsertId();
-    
+
     // ユーザー情報取得
-    $stmt = $pdo->prepare("SELECT id, username, email, role, created_at FROM users WHERE id = ?");
+    $stmt = $pdo->prepare('SELECT id, username, email, role, created_at FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    
+
     // トークン生成
     $token = bin2hex(random_bytes(32));
     $stmt = $pdo->prepare("INSERT INTO personal_access_tokens (tokenable_type, tokenable_id, name, token, created_at, updated_at) VALUES ('App\\\\Models\\\\User', ?, 'auth_token', ?, NOW(), NOW())");
     $stmt->execute([$userId, hash('sha256', $token)]);
-    
+
     http_response_code(201);
     echo json_encode([
         'message' => 'ユーザー登録が完了しました。',
         'user' => $user,
-        'token' => $token
+        'token' => $token,
     ]);
 }
 
 // ログイン処理
-function handleLogin($pdo) {
+function handleLogin($pdo)
+{
     $input = json_decode(file_get_contents('php://input'), true);
-    
+
     // バリデーション
     if (empty($input['email']) || empty($input['password'])) {
         http_response_code(422);
         echo json_encode(['message' => 'メールアドレスとパスワードは必須です。']);
+
         return;
     }
-    
+
     // ユーザー認証
-    $stmt = $pdo->prepare("SELECT id, username, email, password, role, created_at FROM users WHERE email = ?");
+    $stmt = $pdo->prepare('SELECT id, username, email, password, role, created_at FROM users WHERE email = ?');
     $stmt->execute([$input['email']]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$user || !password_verify($input['password'], $user['password'])) {
+
+    if (! $user || ! password_verify($input['password'], $user['password'])) {
         http_response_code(401);
         echo json_encode(['message' => 'メールアドレスまたはパスワードが正しくありません。']);
+
         return;
     }
-    
+
     // パスワードを除去
     unset($user['password']);
-    
+
     // トークン生成
     $token = bin2hex(random_bytes(32));
     $stmt = $pdo->prepare("INSERT INTO personal_access_tokens (tokenable_type, tokenable_id, name, token, created_at, updated_at) VALUES ('App\\\\Models\\\\User', ?, 'auth_token', ?, NOW(), NOW())");
     $stmt->execute([$user['id'], hash('sha256', $token)]);
-    
+
     echo json_encode([
         'message' => 'ログインしました。',
         'user' => $user,
-        'token' => $token
+        'token' => $token,
     ]);
 }
 
 // ログアウト処理
-function handleLogout($pdo) {
+function handleLogout($pdo)
+{
     $token = getBearerToken();
-    if (!$token) {
+    if (! $token) {
         http_response_code(401);
         echo json_encode(['message' => '認証が必要です。']);
+
         return;
     }
-    
+
     // トークン削除
-    $stmt = $pdo->prepare("DELETE FROM personal_access_tokens WHERE token = ?");
+    $stmt = $pdo->prepare('DELETE FROM personal_access_tokens WHERE token = ?');
     $stmt->execute([hash('sha256', $token)]);
-    
+
     echo json_encode(['message' => 'ログアウトしました。']);
 }
 
 // 認証済みユーザー情報取得
-function handleGetUser($pdo) {
+function handleGetUser($pdo)
+{
     $token = getBearerToken();
-    if (!$token) {
+    if (! $token) {
         http_response_code(401);
         echo json_encode(['message' => '認証が必要です。']);
+
         return;
     }
-    
+
     // トークンからユーザー取得
     $stmt = $pdo->prepare("
         SELECT u.id, u.username, u.email, u.role, u.created_at 
@@ -269,62 +299,68 @@ function handleGetUser($pdo) {
     ");
     $stmt->execute([hash('sha256', $token)]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$user) {
+
+    if (! $user) {
         http_response_code(401);
         echo json_encode(['message' => '無効なトークンです。']);
+
         return;
     }
-    
+
     echo json_encode(['user' => $user]);
 }
 
 // Bearerトークン取得
-function getBearerToken() {
+function getBearerToken()
+{
     $headers = getallheaders();
     if (isset($headers['Authorization'])) {
         if (preg_match('/Bearer\s(\S+)/', $headers['Authorization'], $matches)) {
             return $matches[1];
         }
     }
+
     return null;
 }
 
 // 記事取得処理（一覧）
-function handleGetArticles($pdo) {
+function handleGetArticles($pdo)
+{
     $token = getBearerToken();
-    if (!$token) {
+    if (! $token) {
         http_response_code(401);
         echo json_encode(['message' => '認証が必要です。']);
+
         return;
     }
 
     $user = getUserFromToken($pdo, $token);
-    if (!$user) {
+    if (! $user) {
         http_response_code(401);
         echo json_encode(['message' => '無効なトークンです。']);
+
         return;
     }
 
     // 管理者は全記事、一般ユーザーは自分の記事のみ取得
     if ($user['role'] === 'admin') {
-        $stmt = $pdo->prepare("
+        $stmt = $pdo->prepare('
             SELECT a.*, u.username as author_username, c.name as category_name
             FROM articles a
             LEFT JOIN users u ON a.user_id = u.id
             LEFT JOIN categories c ON a.category_id = c.id
             ORDER BY a.created_at DESC
-        ");
+        ');
         $stmt->execute();
     } else {
-        $stmt = $pdo->prepare("
+        $stmt = $pdo->prepare('
             SELECT a.*, u.username as author_username, c.name as category_name
             FROM articles a
             LEFT JOIN users u ON a.user_id = u.id
             LEFT JOIN categories c ON a.category_id = c.id
             WHERE a.user_id = ?
             ORDER BY a.created_at DESC
-        ");
+        ');
         $stmt->execute([$user['id']]);
     }
 
@@ -333,20 +369,22 @@ function handleGetArticles($pdo) {
 }
 
 // 記事取得処理（詳細）
-function handleGetArticle($pdo, $articleId) {
-    $stmt = $pdo->prepare("
+function handleGetArticle($pdo, $articleId)
+{
+    $stmt = $pdo->prepare('
         SELECT a.*, u.username as author_username, c.name as category_name
         FROM articles a
         LEFT JOIN users u ON a.user_id = u.id
         LEFT JOIN categories c ON a.category_id = c.id
         WHERE a.id = ?
-    ");
+    ');
     $stmt->execute([$articleId]);
     $article = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$article) {
+    if (! $article) {
         http_response_code(404);
         echo json_encode(['message' => '記事が見つかりません。']);
+
         return;
     }
 
@@ -354,18 +392,21 @@ function handleGetArticle($pdo, $articleId) {
 }
 
 // 記事作成処理
-function handleCreateArticle($pdo) {
+function handleCreateArticle($pdo)
+{
     $token = getBearerToken();
-    if (!$token) {
+    if (! $token) {
         http_response_code(401);
         echo json_encode(['message' => '認証が必要です。']);
+
         return;
     }
 
     $user = getUserFromToken($pdo, $token);
-    if (!$user) {
+    if (! $user) {
         http_response_code(401);
         echo json_encode(['message' => '無効なトークンです。']);
+
         return;
     }
 
@@ -373,21 +414,28 @@ function handleCreateArticle($pdo) {
 
     // バリデーション
     $errors = [];
-    if (empty($input['title'])) $errors['title'] = ['タイトルは必須です'];
-    if (empty($input['content'])) $errors['content'] = ['内容は必須です'];
-    if (empty($input['category_id'])) $errors['category_id'] = ['カテゴリは必須です'];
+    if (empty($input['title'])) {
+        $errors['title'] = ['タイトルは必須です'];
+    }
+    if (empty($input['content'])) {
+        $errors['content'] = ['内容は必須です'];
+    }
+    if (empty($input['category_id'])) {
+        $errors['category_id'] = ['カテゴリは必須です'];
+    }
 
-    if (!empty($errors)) {
+    if (! empty($errors)) {
         http_response_code(422);
         echo json_encode(['message' => '入力内容に誤りがあります。', 'errors' => $errors]);
+
         return;
     }
 
     // 記事作成
-    $stmt = $pdo->prepare("
+    $stmt = $pdo->prepare('
         INSERT INTO articles (user_id, title, content, category_id, status, is_premium, price, created_at, updated_at) 
         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
-    ");
+    ');
     $stmt->execute([
         $user['id'],
         $input['title'],
@@ -395,53 +443,57 @@ function handleCreateArticle($pdo) {
         $input['category_id'],
         $input['status'] ?? 'draft',
         $input['is_premium'] ?? 0,
-        $input['price'] ?? 0
+        $input['price'] ?? 0,
     ]);
 
     $articleId = $pdo->lastInsertId();
 
     // 作成した記事を取得
-    $stmt = $pdo->prepare("
+    $stmt = $pdo->prepare('
         SELECT a.*, u.username as author_username, c.name as category_name
         FROM articles a
         LEFT JOIN users u ON a.user_id = u.id
         LEFT JOIN categories c ON a.category_id = c.id
         WHERE a.id = ?
-    ");
+    ');
     $stmt->execute([$articleId]);
     $article = $stmt->fetch(PDO::FETCH_ASSOC);
 
     http_response_code(201);
     echo json_encode([
         'message' => '記事が作成されました。',
-        'article' => $article
+        'article' => $article,
     ]);
 }
 
 // 記事更新処理
-function handleUpdateArticle($pdo, $articleId) {
+function handleUpdateArticle($pdo, $articleId)
+{
     $token = getBearerToken();
-    if (!$token) {
+    if (! $token) {
         http_response_code(401);
         echo json_encode(['message' => '認証が必要です。']);
+
         return;
     }
 
     $user = getUserFromToken($pdo, $token);
-    if (!$user) {
+    if (! $user) {
         http_response_code(401);
         echo json_encode(['message' => '無効なトークンです。']);
+
         return;
     }
 
     // 記事の存在確認と権限チェック
-    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = ?");
+    $stmt = $pdo->prepare('SELECT * FROM articles WHERE id = ?');
     $stmt->execute([$articleId]);
     $article = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$article) {
+    if (! $article) {
         http_response_code(404);
         echo json_encode(['message' => '記事が見つかりません。']);
+
         return;
     }
 
@@ -449,6 +501,7 @@ function handleUpdateArticle($pdo, $articleId) {
     if ($user['role'] !== 'admin' && $article['user_id'] != $user['id']) {
         http_response_code(403);
         echo json_encode(['message' => 'この記事を編集する権限がありません。']);
+
         return;
     }
 
@@ -456,22 +509,29 @@ function handleUpdateArticle($pdo, $articleId) {
 
     // バリデーション
     $errors = [];
-    if (empty($input['title'])) $errors['title'] = ['タイトルは必須です'];
-    if (empty($input['content'])) $errors['content'] = ['内容は必須です'];
-    if (empty($input['category_id'])) $errors['category_id'] = ['カテゴリは必須です'];
+    if (empty($input['title'])) {
+        $errors['title'] = ['タイトルは必須です'];
+    }
+    if (empty($input['content'])) {
+        $errors['content'] = ['内容は必須です'];
+    }
+    if (empty($input['category_id'])) {
+        $errors['category_id'] = ['カテゴリは必須です'];
+    }
 
-    if (!empty($errors)) {
+    if (! empty($errors)) {
         http_response_code(422);
         echo json_encode(['message' => '入力内容に誤りがあります。', 'errors' => $errors]);
+
         return;
     }
 
     // 記事更新
-    $stmt = $pdo->prepare("
+    $stmt = $pdo->prepare('
         UPDATE articles 
         SET title = ?, content = ?, category_id = ?, status = ?, is_premium = ?, price = ?, updated_at = NOW()
         WHERE id = ?
-    ");
+    ');
     $stmt->execute([
         $input['title'],
         $input['content'],
@@ -479,50 +539,54 @@ function handleUpdateArticle($pdo, $articleId) {
         $input['status'] ?? $article['status'],
         $input['is_premium'] ?? $article['is_premium'],
         $input['price'] ?? $article['price'],
-        $articleId
+        $articleId,
     ]);
 
     // 更新した記事を取得
-    $stmt = $pdo->prepare("
+    $stmt = $pdo->prepare('
         SELECT a.*, u.username as author_username, c.name as category_name
         FROM articles a
         LEFT JOIN users u ON a.user_id = u.id
         LEFT JOIN categories c ON a.category_id = c.id
         WHERE a.id = ?
-    ");
+    ');
     $stmt->execute([$articleId]);
     $updatedArticle = $stmt->fetch(PDO::FETCH_ASSOC);
 
     echo json_encode([
         'message' => '記事が更新されました。',
-        'article' => $updatedArticle
+        'article' => $updatedArticle,
     ]);
 }
 
 // 記事削除処理
-function handleDeleteArticle($pdo, $articleId) {
+function handleDeleteArticle($pdo, $articleId)
+{
     $token = getBearerToken();
-    if (!$token) {
+    if (! $token) {
         http_response_code(401);
         echo json_encode(['message' => '認証が必要です。']);
+
         return;
     }
 
     $user = getUserFromToken($pdo, $token);
-    if (!$user) {
+    if (! $user) {
         http_response_code(401);
         echo json_encode(['message' => '無効なトークンです。']);
+
         return;
     }
 
     // 記事の存在確認と権限チェック
-    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = ?");
+    $stmt = $pdo->prepare('SELECT * FROM articles WHERE id = ?');
     $stmt->execute([$articleId]);
     $article = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$article) {
+    if (! $article) {
         http_response_code(404);
         echo json_encode(['message' => '記事が見つかりません。']);
+
         return;
     }
 
@@ -530,18 +594,34 @@ function handleDeleteArticle($pdo, $articleId) {
     if ($user['role'] !== 'admin' && $article['user_id'] != $user['id']) {
         http_response_code(403);
         echo json_encode(['message' => 'この記事を削除する権限がありません。']);
+
         return;
     }
 
     // 記事削除
-    $stmt = $pdo->prepare("DELETE FROM articles WHERE id = ?");
+    $stmt = $pdo->prepare('DELETE FROM articles WHERE id = ?');
     $stmt->execute([$articleId]);
 
     echo json_encode(['message' => '記事が削除されました。']);
 }
 
 // 公開記事一覧取得（認証不要）
-function handleGetPublishedArticles($pdo) {
+function handleGetPublishedArticles($pdo)
+{
+    $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+    $limit = isset($_GET['limit']) ? max(1, min(50, intval($_GET['limit']))) : 10;
+    $offset = ($page - 1) * $limit;
+
+    // 総記事数を取得
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) as total
+        FROM articles a
+        WHERE a.status = 'published'
+    ");
+    $countStmt->execute();
+    $totalCount = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+    // 記事一覧を取得（ページネーション）
     $stmt = $pdo->prepare("
         SELECT a.*, u.username as author_username, c.name as category_name
         FROM articles a
@@ -549,24 +629,116 @@ function handleGetPublishedArticles($pdo) {
         LEFT JOIN categories c ON a.category_id = c.id
         WHERE a.status = 'published'
         ORDER BY a.created_at DESC
+        LIMIT {$limit} OFFSET {$offset}
     ");
     $stmt->execute();
     $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    echo json_encode(['articles' => $articles]);
+    echo json_encode([
+        'articles' => $articles,
+        'pagination' => [
+            'current_page' => $page,
+            'per_page' => $limit,
+            'total' => $totalCount,
+            'total_pages' => ceil($totalCount / $limit),
+            'has_more' => $page < ceil($totalCount / $limit),
+        ],
+    ]);
 }
 
 // カテゴリ一覧取得
-function handleGetCategories($pdo) {
-    $stmt = $pdo->prepare("SELECT * FROM categories ORDER BY name ASC");
+function handleGetCategories($pdo)
+{
+    $stmt = $pdo->prepare('SELECT * FROM categories ORDER BY name ASC');
     $stmt->execute();
     $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     echo json_encode(['categories' => $categories]);
 }
 
+// 記事検索機能
+function handleSearchArticles($pdo)
+{
+    $searchQuery = $_GET['q'] ?? '';
+    $categoryId = $_GET['category'] ?? '';
+    $status = $_GET['status'] ?? 'published';
+    $freeOnly = isset($_GET['free_only']) && $_GET['free_only'] === '1';
+    $page = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
+    $limit = isset($_GET['limit']) ? max(1, min(50, intval($_GET['limit']))) : 10;
+    $offset = ($page - 1) * $limit;
+
+    // 基本のクエリ（カウント用）
+    $countQuery = '
+        SELECT COUNT(*) as total
+        FROM articles a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.status = ?
+    ';
+
+    // 基本のクエリ（結果取得用）
+    $query = '
+        SELECT a.*, u.username as author_username, c.name as category_name
+        FROM articles a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.status = ?
+    ';
+
+    $params = [$status];
+
+    // 検索クエリがある場合のフィルタリング
+    if (! empty($searchQuery)) {
+        $countQuery .= ' AND (a.title LIKE ? OR a.content LIKE ? OR u.username LIKE ?)';
+        $query .= ' AND (a.title LIKE ? OR a.content LIKE ? OR u.username LIKE ?)';
+        $searchParam = "%{$searchQuery}%";
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+    }
+
+    // カテゴリフィルタリング
+    if (! empty($categoryId)) {
+        $countQuery .= ' AND a.category_id = ?';
+        $query .= ' AND a.category_id = ?';
+        $params[] = $categoryId;
+    }
+
+    // 無料記事のみフィルタリング
+    if ($freeOnly) {
+        $countQuery .= ' AND a.is_premium = 0';
+        $query .= ' AND a.is_premium = 0';
+    }
+
+    // 総件数を取得
+    $countStmt = $pdo->prepare($countQuery);
+    $countStmt->execute($params);
+    $totalCount = $countStmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+    // 結果を取得（ページネーション）
+    $query .= " ORDER BY a.created_at DESC LIMIT {$limit} OFFSET {$offset}";
+    $stmt = $pdo->prepare($query);
+    $stmt->execute($params);
+    $articles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    echo json_encode([
+        'articles' => $articles,
+        'search_query' => $searchQuery,
+        'category_id' => $categoryId,
+        'free_only' => $freeOnly,
+        'pagination' => [
+            'current_page' => $page,
+            'per_page' => $limit,
+            'total' => $totalCount,
+            'total_pages' => ceil($totalCount / $limit),
+            'has_more' => $page < ceil($totalCount / $limit),
+        ],
+    ]);
+}
+
 // トークンからユーザー情報を取得
-function getUserFromToken($pdo, $token) {
+function getUserFromToken($pdo, $token)
+{
     $stmt = $pdo->prepare("
         SELECT u.id, u.username, u.email, u.role, u.created_at 
         FROM users u 
@@ -574,11 +746,13 @@ function getUserFromToken($pdo, $token) {
         WHERE t.token = ? AND t.tokenable_type = 'App\\\\Models\\\\User'
     ");
     $stmt->execute([hash('sha256', $token)]);
+
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
 // データベーステーブル作成（初回実行時）
-function createTables($pdo) {
+function createTables($pdo)
+{
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -592,8 +766,8 @@ function createTables($pdo) {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
     ");
-    
-    $pdo->exec("
+
+    $pdo->exec('
         CREATE TABLE IF NOT EXISTS personal_access_tokens (
             id INT AUTO_INCREMENT PRIMARY KEY,
             tokenable_type VARCHAR(255) NOT NULL,
@@ -606,9 +780,9 @@ function createTables($pdo) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
-    ");
+    ');
 
-    $pdo->exec("
+    $pdo->exec('
         CREATE TABLE IF NOT EXISTS categories (
             id INT AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(255) UNIQUE NOT NULL,
@@ -616,7 +790,7 @@ function createTables($pdo) {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         )
-    ");
+    ');
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS articles (

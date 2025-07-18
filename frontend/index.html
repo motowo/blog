@@ -1052,9 +1052,6 @@
                                                                 : article.content
                                                             }
                                                         </p>
-                                                        <div className="flex items-center space-x-4 text-sm text-gray-500">
-                                                            <span>閲覧数: {article.view_count || 0}</span>
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -1068,29 +1065,219 @@
             );
         };
 
+        // SearchForm Component
+        const SearchForm = ({ onSearch, onClear }) => {
+            const [searchQuery, setSearchQuery] = useState('');
+            const [categoryId, setCategoryId] = useState('');
+            const [freeOnly, setFreeOnly] = useState(false);
+            const [categories, setCategories] = useState([]);
+            const [isLoading, setIsLoading] = useState(false);
+
+            useEffect(() => {
+                fetchCategories();
+            }, []);
+
+            const fetchCategories = async () => {
+                try {
+                    const response = await axios.get('http://localhost:8000/api/categories');
+                    setCategories(response.data.categories);
+                } catch (error) {
+                    console.error('カテゴリ取得エラー:', error);
+                }
+            };
+
+            const handleSearch = async (e) => {
+                e.preventDefault();
+                setIsLoading(true);
+
+                try {
+                    const params = new URLSearchParams();
+                    if (searchQuery) params.append('q', searchQuery);
+                    if (categoryId) params.append('category', categoryId);
+                    if (freeOnly) params.append('free_only', '1');
+
+                    const response = await axios.get(`http://localhost:8000/api/articles/search?${params}`);
+                    onSearch(response.data.articles, searchQuery, categoryId, freeOnly);
+                } catch (error) {
+                    console.error('検索エラー:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleClear = () => {
+                setSearchQuery('');
+                setCategoryId('');
+                setFreeOnly(false);
+                onClear();
+            };
+
+            return (
+                <div className="bg-white rounded-lg shadow p-6 mb-6">
+                    <h2 className="text-xl font-bold text-gray-900 mb-4">記事検索</h2>
+                    
+                    <form onSubmit={handleSearch} className="space-y-4">
+                        <div className="flex gap-4">
+                            <div className="flex-1">
+                                <label htmlFor="search" className="block text-sm font-medium text-gray-700 mb-1">
+                                    キーワード
+                                </label>
+                                <input
+                                    type="text"
+                                    id="search"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="記事タイトル、内容、作者名で検索"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+                            
+                            <div className="w-48">
+                                <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-1">
+                                    カテゴリ
+                                </label>
+                                <select
+                                    id="category"
+                                    value={categoryId}
+                                    onChange={(e) => setCategoryId(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    <option value="">すべて</option>
+                                    {categories.map((category) => (
+                                        <option key={category.id} value={category.id}>
+                                            {category.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center mt-4">
+                            <input
+                                type="checkbox"
+                                id="freeOnly"
+                                checked={freeOnly}
+                                onChange={(e) => setFreeOnly(e.target.checked)}
+                                className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label htmlFor="freeOnly" className="ml-2 text-sm font-medium text-gray-700">
+                                無料記事のみ検索
+                            </label>
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 flex items-center"
+                            >
+                                {isLoading ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        検索中...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                        検索
+                                    </>
+                                )}
+                            </button>
+                            
+                            <button
+                                type="button"
+                                onClick={handleClear}
+                                className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                            >
+                                クリア
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+        };
+
         // PublicHome Component (初期画面)
         const PublicHome = ({ isAuthenticated, user, onLogin, onLogout, onGoToDashboard }) => {
             const [articles, setArticles] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [showAuth, setShowAuth] = useState(false);
             const [isLoginMode, setIsLoginMode] = useState(true);
+            const [searchResults, setSearchResults] = useState([]);
+            const [isSearchMode, setIsSearchMode] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
+            const [selectedCategory, setSelectedCategory] = useState('');
+            const [freeOnly, setFreeOnly] = useState(false);
+            const [pagination, setPagination] = useState({ current_page: 1, has_more: true });
+            const [isLoadingMore, setIsLoadingMore] = useState(false);
 
             useEffect(() => {
-                fetchPublishedArticles();
+                fetchPublishedArticles(1, true);
             }, []);
 
-            const fetchPublishedArticles = async () => {
+            // カテゴリアイコンマッピング
+            const getCategoryIcon = (categoryName) => {
+                const icons = {
+                    'テクノロジー': '💻',
+                    'ビジネス': '💼',
+                    'ライフスタイル': '🌱',
+                    '教育': '📚',
+                    'エンターテイメント': '🎬'
+                };
+                return icons[categoryName] || '📄';
+            };
+
+            // 3桁区切りの数値フォーマット
+            const formatPrice = (price) => {
+                return new Intl.NumberFormat('ja-JP').format(price);
+            };
+
+            const fetchPublishedArticles = async (page = 1, reset = false) => {
                 try {
-                    setIsLoading(true);
-                    const response = await axios.get('http://localhost:8000/api/articles/published');
-                    setArticles(response.data.articles);
+                    if (reset) {
+                        setIsLoading(true);
+                    } else {
+                        setIsLoadingMore(true);
+                    }
+                    
+                    const response = await axios.get(`http://localhost:8000/api/articles/published?page=${page}&limit=10`);
+                    
+                    if (reset) {
+                        setArticles(response.data.articles);
+                    } else {
+                        setArticles(prev => [...prev, ...response.data.articles]);
+                    }
+                    
+                    setPagination(response.data.pagination);
                 } catch (error) {
                     console.error('記事の取得に失敗しました:', error);
-                    setArticles([]);
+                    if (reset) {
+                        setArticles([]);
+                    }
                 } finally {
                     setIsLoading(false);
+                    setIsLoadingMore(false);
                 }
             };
+
+            // 無限スクロール
+            const handleScroll = () => {
+                if (window.innerHeight + document.documentElement.scrollTop >= document.documentElement.offsetHeight - 1000) {
+                    if (!isLoadingMore && pagination.has_more && !isSearchMode) {
+                        fetchPublishedArticles(pagination.current_page + 1, false);
+                    }
+                }
+            };
+
+            useEffect(() => {
+                window.addEventListener('scroll', handleScroll);
+                return () => window.removeEventListener('scroll', handleScroll);
+            }, [isLoadingMore, pagination.has_more, isSearchMode]);
 
             const handleAuthSuccess = (userData, token) => {
                 localStorage.setItem('token', token);
@@ -1103,6 +1290,22 @@
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
                 onLogout();
+            };
+
+            const handleSearch = (results, query, categoryId, freeOnly) => {
+                setSearchResults(results);
+                setSearchQuery(query);
+                setSelectedCategory(categoryId);
+                setFreeOnly(freeOnly);
+                setIsSearchMode(true);
+            };
+
+            const handleClearSearch = () => {
+                setSearchResults([]);
+                setSearchQuery('');
+                setSelectedCategory('');
+                setFreeOnly(false);
+                setIsSearchMode(false);
             };
 
             if (showAuth) {
@@ -1178,9 +1381,19 @@
 
                     <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
                         <div className="px-4 py-6 sm:px-0">
+                            {/* 検索フォーム */}
+                            <SearchForm onSearch={handleSearch} onClear={handleClearSearch} />
+
                             <div className="mb-6">
-                                <h2 className="text-2xl font-bold text-gray-900">最新記事</h2>
-                                <p className="text-gray-600 text-sm mt-1">公開されている記事を新しい順で表示しています</p>
+                                <h2 className="text-2xl font-bold text-gray-900">
+                                    {isSearchMode ? `検索結果 (${searchResults.length}件)` : '最新記事'}
+                                </h2>
+                                <p className="text-gray-600 text-sm mt-1">
+                                    {isSearchMode 
+                                        ? `「${searchQuery}」${selectedCategory ? `・カテゴリ: ${selectedCategory}` : ''}${freeOnly ? '・無料記事のみ' : ''} で検索しました`
+                                        : '公開されている記事を新しい順で表示しています'
+                                    }
+                                </p>
                             </div>
 
                             {/* 記事一覧 */}
@@ -1190,14 +1403,18 @@
                                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
                                         <p className="mt-2 text-gray-600">記事を読み込み中...</p>
                                     </div>
-                                ) : articles.length === 0 ? (
+                                ) : (isSearchMode ? searchResults : articles).length === 0 ? (
                                     <div className="text-center py-12">
-                                        <p className="text-gray-600 text-lg">公開されている記事がありません</p>
-                                        <p className="text-gray-500 text-sm mt-2">記事が公開されるまでお待ちください</p>
+                                        <p className="text-gray-600 text-lg">
+                                            {isSearchMode ? '検索結果がありません' : '公開されている記事がありません'}
+                                        </p>
+                                        <p className="text-gray-500 text-sm mt-2">
+                                            {isSearchMode ? '別のキーワードで検索してみてください' : '記事が公開されるまでお待ちください'}
+                                        </p>
                                     </div>
                                 ) : (
                                     <div className="divide-y divide-gray-200">
-                                        {articles.map((article) => (
+                                        {(isSearchMode ? searchResults : articles).map((article) => (
                                             <div key={article.id} className="p-6 hover:bg-gray-50 transition-colors">
                                                 <div className="flex justify-between items-start">
                                                     <div className="flex-1">
@@ -1209,13 +1426,14 @@
                                                             <span>•</span>
                                                             <span>{new Date(article.created_at).toLocaleDateString('ja-JP')}</span>
                                                             <span>•</span>
-                                                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
-                                                                {article.category_name}
+                                                            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs flex items-center gap-1">
+                                                                <span>{getCategoryIcon(article.category_name)}</span>
+                                                                <span>{article.category_name}</span>
                                                             </span>
                                                             <span>•</span>
                                                             {article.is_premium ? (
                                                                 <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
-                                                                    有料 ¥{parseInt(article.price)}
+                                                                    有料 ¥{formatPrice(parseInt(article.price))}
                                                                 </span>
                                                             ) : (
                                                                 <span className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
@@ -1229,13 +1447,24 @@
                                                                 : article.content
                                                             }
                                                         </p>
-                                                        <div className="flex items-center space-x-4 text-sm text-gray-500">
-                                                            <span>閲覧数: {article.view_count || 0}</span>
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         ))}
+                                    </div>
+                                )}
+                                
+                                {/* Lazy Loading */}
+                                {isLoadingMore && (
+                                    <div className="text-center py-6">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                                        <p className="mt-2 text-gray-600">さらに読み込み中...</p>
+                                    </div>
+                                )}
+                                
+                                {!isLoading && !isLoadingMore && !isSearchMode && !pagination.has_more && articles.length > 0 && (
+                                    <div className="text-center py-6">
+                                        <p className="text-gray-600">すべての記事を読み込みました</p>
                                     </div>
                                 )}
                             </div>
