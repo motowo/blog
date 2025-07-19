@@ -154,6 +154,42 @@ switch ($path) {
         }
         break;
 
+    case '/api/admin/revenue/stats':
+        if ($method === 'GET') {
+            handleGetRevenueStats($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case '/api/admin/revenue/transactions':
+        if ($method === 'GET') {
+            handleGetRevenueTransactions($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case '/api/admin/revenue/monthly':
+        if ($method === 'GET') {
+            handleGetMonthlyRevenue($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
+    case '/api/admin/revenue/articles':
+        if ($method === 'GET') {
+            handleGetArticleRevenue($pdo);
+        } else {
+            http_response_code(405);
+            echo json_encode(['error' => 'Method not allowed']);
+        }
+        break;
+
     case '/api/test':
         echo json_encode([
             'message' => 'API is working',
@@ -185,6 +221,10 @@ switch ($path) {
                 'GET /api/purchases',
                 'POST /api/purchases/status',
                 'GET /api/articles/{id}/purchase-status',
+                'GET /api/admin/revenue/stats',
+                'GET /api/admin/revenue/transactions',
+                'GET /api/admin/revenue/monthly',
+                'GET /api/admin/revenue/articles',
                 'GET /api/test',
             ],
         ]);
@@ -992,6 +1032,200 @@ function handleGetMultiplePurchaseStatus($pdo)
     }
 
     echo json_encode(['purchase_status' => $purchaseStatus]);
+}
+
+// 管理者権限チェック
+function requireAdminAuth($pdo)
+{
+    $token = getBearerToken();
+    if (!$token) {
+        http_response_code(401);
+        echo json_encode(['message' => '認証が必要です。']);
+        exit;
+    }
+
+    $user = getUserFromToken($pdo, $token);
+    if (!$user) {
+        http_response_code(401);
+        echo json_encode(['message' => '無効なトークンです。']);
+        exit;
+    }
+
+    if ($user['role'] !== 'admin') {
+        http_response_code(403);
+        echo json_encode(['message' => '管理者権限が必要です。']);
+        exit;
+    }
+
+    return $user;
+}
+
+// 収益統計取得
+function handleGetRevenueStats($pdo)
+{
+    $admin = requireAdminAuth($pdo);
+
+    try {
+        // 総売上
+        $stmt = $pdo->prepare("SELECT SUM(amount) as total_revenue, COUNT(*) as total_transactions FROM purchases WHERE status = 'completed'");
+        $stmt->execute();
+        $totals = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // 今月の売上
+        $stmt = $pdo->prepare("
+            SELECT SUM(amount) as monthly_revenue, COUNT(*) as monthly_transactions 
+            FROM purchases 
+            WHERE status = 'completed' 
+            AND YEAR(purchase_date) = YEAR(CURRENT_DATE()) 
+            AND MONTH(purchase_date) = MONTH(CURRENT_DATE())
+        ");
+        $stmt->execute();
+        $monthly = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // 今日の売上
+        $stmt = $pdo->prepare("
+            SELECT SUM(amount) as daily_revenue, COUNT(*) as daily_transactions 
+            FROM purchases 
+            WHERE status = 'completed' 
+            AND DATE(purchase_date) = CURRENT_DATE()
+        ");
+        $stmt->execute();
+        $daily = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        // 人気記事TOP5
+        $stmt = $pdo->prepare("
+            SELECT a.title, a.price, COUNT(p.id) as purchase_count, SUM(p.amount) as revenue
+            FROM articles a
+            LEFT JOIN purchases p ON a.id = p.article_id AND p.status = 'completed'
+            WHERE a.is_premium = 1
+            GROUP BY a.id, a.title, a.price
+            ORDER BY purchase_count DESC, revenue DESC
+            LIMIT 5
+        ");
+        $stmt->execute();
+        $topArticles = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        echo json_encode([
+            'stats' => [
+                'total_revenue' => (float) ($totals['total_revenue'] ?? 0),
+                'total_transactions' => (int) ($totals['total_transactions'] ?? 0),
+                'monthly_revenue' => (float) ($monthly['monthly_revenue'] ?? 0),
+                'monthly_transactions' => (int) ($monthly['monthly_transactions'] ?? 0),
+                'daily_revenue' => (float) ($daily['daily_revenue'] ?? 0),
+                'daily_transactions' => (int) ($daily['daily_transactions'] ?? 0),
+            ],
+            'top_articles' => $topArticles
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['message' => '統計の取得に失敗しました。']);
+    }
+}
+
+// 収益取引履歴取得
+function handleGetRevenueTransactions($pdo)
+{
+    $admin = requireAdminAuth($pdo);
+
+    try {
+        $page = (int) ($_GET['page'] ?? 1);
+        $limit = (int) ($_GET['limit'] ?? 20);
+        $offset = ($page - 1) * $limit;
+
+        $stmt = $pdo->prepare("
+            SELECT 
+                p.*,
+                a.title as article_title,
+                u.username as buyer_username,
+                au.username as author_username
+            FROM purchases p
+            LEFT JOIN articles a ON p.article_id = a.id
+            LEFT JOIN users u ON p.user_id = u.id
+            LEFT JOIN users au ON a.user_id = au.id
+            ORDER BY p.purchase_date DESC
+            LIMIT $limit OFFSET $offset
+        ");
+        $stmt->execute();
+        $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // 総件数取得
+        $stmt = $pdo->prepare('SELECT COUNT(*) as total FROM purchases');
+        $stmt->execute();
+        $total = $stmt->fetch(PDO::FETCH_ASSOC)['total'];
+
+        echo json_encode([
+            'transactions' => $transactions,
+            'pagination' => [
+                'current_page' => $page,
+                'total_pages' => ceil($total / $limit),
+                'total_items' => (int) $total,
+                'per_page' => $limit
+            ]
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['message' => '取引履歴の取得に失敗しました。']);
+    }
+}
+
+// 月別収益取得
+function handleGetMonthlyRevenue($pdo)
+{
+    $admin = requireAdminAuth($pdo);
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT 
+                YEAR(purchase_date) as year,
+                MONTH(purchase_date) as month,
+                SUM(amount) as revenue,
+                COUNT(*) as transactions
+            FROM purchases 
+            WHERE status = 'completed'
+            GROUP BY YEAR(purchase_date), MONTH(purchase_date)
+            ORDER BY year DESC, month DESC
+            LIMIT 12
+        ");
+        $stmt->execute();
+        $monthlyData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        echo json_encode(['monthly_revenue' => $monthlyData]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['message' => '月別収益の取得に失敗しました。']);
+    }
+}
+
+// 記事別売上取得
+function handleGetArticleRevenue($pdo)
+{
+    $admin = requireAdminAuth($pdo);
+
+    try {
+        $stmt = $pdo->prepare("
+            SELECT 
+                a.id,
+                a.title,
+                a.price,
+                u.username as author_username,
+                COUNT(p.id) as purchase_count,
+                SUM(p.amount) as total_revenue,
+                a.created_at
+            FROM articles a
+            LEFT JOIN purchases p ON a.id = p.article_id AND p.status = 'completed'
+            LEFT JOIN users u ON a.user_id = u.id
+            WHERE a.is_premium = 1
+            GROUP BY a.id, a.title, a.price, u.username, a.created_at
+            ORDER BY total_revenue DESC, purchase_count DESC
+        ");
+        $stmt->execute();
+        $articleRevenue = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        echo json_encode(['article_revenue' => $articleRevenue]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['message' => '記事別売上の取得に失敗しました。']);
+    }
 }
 
 // データベーステーブル作成（初回実行時）
